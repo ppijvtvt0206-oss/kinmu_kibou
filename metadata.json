@@ -1,0 +1,6 @@
+{
+  "name": "勤務希望提出・シフト管理システム",
+  "description": "スタッフから提出された勤務希望をカレンダー上でリアルタイムに管理・調整・印刷できる、レスポンシブな勤務シフト調整プラットフォームです。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
