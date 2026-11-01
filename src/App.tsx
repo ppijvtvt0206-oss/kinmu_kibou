@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, ScheduleData, ShiftCode } from './types';
-import { INITIAL_USERS, INITIAL_SCHEDULE, SHIFT_TYPES } from './constants';
+import { INITIAL_USERS, INITIAL_SCHEDULE, SHIFT_TYPES, getSelectableShifts, RESTRICTED_EMPLOYEE_SHIFTS } from './constants';
 import ShiftTable from './components/ShiftTable';
 import UserManagement from './components/UserManagement';
 import PrintView from './components/PrintView';
@@ -26,7 +26,8 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
-  Building2
+  Building2,
+  Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -41,7 +42,20 @@ export default function App() {
       if (parsed.length < INITIAL_USERS.length || !parsed.some((u: any) => u.id === 'u14')) {
         return INITIAL_USERS;
       }
-      return parsed;
+      return parsed.map((u: any) => {
+        const isManager = u.id === 'u99' || u.role === 'manager';
+        const password = u.password 
+          ? (isManager && u.password === '0000' ? '1234' : u.password)
+          : (isManager ? '1234' : '0000');
+        const isInitial = isManager 
+          ? false 
+          : (u.isInitialPassword !== undefined ? u.isInitialPassword : password === '0000');
+        return {
+          ...u,
+          password,
+          isInitialPassword: isInitial,
+        };
+      });
     }
     return INITIAL_USERS;
   });
@@ -112,6 +126,12 @@ export default function App() {
       ...prev,
       [currentYearMonth]: newStatus
     }));
+    const statusLabels: Record<string, string> = {
+      open: '希望受付中',
+      closed: '受付終了（調整中）',
+      finalized: 'シフト確定',
+    };
+    setNotification(`シフト提出状況を【${statusLabels[newStatus]}】に変更しました`);
   };
 
   // Success Notification state
@@ -120,7 +140,7 @@ export default function App() {
 
   // Forms
   const [requestForm, setRequestForm] = useState({ date: '2026-05-01', shiftCode: '休' as ShiftCode, memo: '' });
-  const [userForm, setUserForm] = useState({ name: '', loginId: '', role: 'employee' as 'manager' | 'employee' });
+  const [userForm, setUserForm] = useState({ name: '', role: 'employee' as 'manager' | 'employee' });
 
   const [loginInput, setLoginInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
@@ -130,6 +150,12 @@ export default function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [userFormError, setUserFormError] = useState('');
+
+  // Initial login password reset modal
+  const [isPasswordResetModalOpen, setIsPasswordResetModalOpen] = useState(false);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [passwordResetError, setPasswordResetError] = useState('');
 
   const [daysInMonth, setDaysInMonth] = useState<Date[]>([]);
 
@@ -218,40 +244,94 @@ export default function App() {
       return;
     }
 
+    const cleanPassword = passwordInput.trim();
+    if (!/^\d{4}$/.test(cleanPassword)) {
+      setLoginError('パスワードは半角数字4文字で入力してください');
+      return;
+    }
+
     setIsLoggingIn(true);
     setLoginError('');
 
-    // Smooth authentication verification
     setTimeout(() => {
-      // 1. Direct match by name, id, or loginId
-      let foundUser = users.find(u => 
-        u.name === rawInput || 
-        u.id === rawInput || 
-        u.loginId === rawInput
-      );
+      const foundUser = users.find(u => u.name === rawInput);
 
-      // 2. Normalized match as fallback (removing spaces, case-insensitive)
       if (!foundUser) {
-        const cleanInput = rawInput.replace(/[\s\u3000]+/g, '').toLowerCase();
-        foundUser = users.find(u => {
-          const cleanName = u.name.replace(/[\s\u3000]+/g, '').toLowerCase();
-          const cleanId = u.loginId.replace(/[\s\u3000]+/g, '').toLowerCase();
-          return cleanName === cleanInput || cleanId === cleanInput;
-        });
+        setLoginError('選択されたスタッフが見つかりません');
+        setIsLoggingIn(false);
+        return;
       }
 
-      if (foundUser) {
-        setCurrentUser(foundUser);
-        setLoginInput('');
-        setPasswordInput('');
-        setLoginError('');
-        setActiveTab('calendar');
-        setNotification(`${foundUser.name}（${foundUser.role === 'manager' ? '管理者' : '職員'}）としてログインしました`);
-      } else {
-        setLoginError('スタッフ名またはパスワードが正しくありません。再度ご確認ください。');
+      const expectedPassword = foundUser.password || (foundUser.role === 'manager' ? '1234' : '0000');
+      if (cleanPassword !== expectedPassword) {
+        setLoginError('パスワードが正しくありません（数字4文字）');
+        setIsLoggingIn(false);
+        return;
       }
+
+      setCurrentUser(foundUser);
+      setPasswordInput('');
+      setLoginError('');
+      setActiveTab('calendar');
+      setNotification(`${foundUser.name}（${foundUser.role === 'manager' ? '管理者' : '職員'}）としてログインしました`);
+
+      // If logging in with initial password "0000" or initial flag is true, trigger password reset screen!
+      if (expectedPassword === '0000' || foundUser.isInitialPassword) {
+        setIsPasswordResetModalOpen(true);
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+        setPasswordResetError('');
+      }
+
       setIsLoggingIn(false);
-    }, 200);
+    }, 150);
+  };
+
+  const handlePasswordResetSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const p1 = newPasswordInput.trim();
+    const p2 = confirmPasswordInput.trim();
+
+    if (!/^\d{4}$/.test(p1)) {
+      setPasswordResetError('パスワードは半角数字4文字で入力してください');
+      return;
+    }
+
+    if (p1 === '0000') {
+      setPasswordResetError('初期パスワード「0000」以外の数字4文字を設定してください');
+      return;
+    }
+
+    if (p1 !== p2) {
+      setPasswordResetError('確認用パスワードと一致しません');
+      return;
+    }
+
+    if (!currentUser) return;
+
+    const updatedUser: User = {
+      ...currentUser,
+      password: p1,
+      isInitialPassword: false,
+    };
+
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    setCurrentUser(updatedUser);
+    setIsPasswordResetModalOpen(false);
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setPasswordResetError('');
+    setNotification('新しいパスワードを設定しました。次回以降はこのパスワードでログインしてください。');
+  };
+
+  const handleManagerResetPassword = (userId: string) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return;
+    if (window.confirm(`${target.name}さんのパスワードを初期値「0000」にリセットしますか？\n（スタッフが次回ログインした際にパスワード再設定画面が表示されます）`)) {
+      const updated: User = { ...target, password: '0000', isInitialPassword: true };
+      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
+      setNotification(`${target.name}さんのパスワードを初期値「0000」にリセットしました`);
+    }
   };
 
   const handleLogout = () => {
@@ -263,6 +343,10 @@ export default function App() {
   const handleRequestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !requestForm.date || !requestForm.shiftCode) return;
+    if (currentUser.role !== 'manager' && RESTRICTED_EMPLOYEE_SHIFTS.includes(requestForm.shiftCode)) {
+      setNotification('このシフト区分は一般スタッフでは選択できません');
+      return;
+    }
     
     setScheduleData(prev => {
       const newData = { ...prev };
@@ -287,45 +371,45 @@ export default function App() {
     setUserFormError('');
     if (user) {
       setEditingUser(user);
-      setUserForm({ name: user.name, loginId: user.loginId, role: user.role });
+      setUserForm({ name: user.name, role: user.role });
     } else {
       setEditingUser(null);
-      setUserForm({ name: '', loginId: '', role: 'employee' });
+      setUserForm({ name: '', role: 'employee' });
     }
     setIsUserModalOpen(true);
   };
 
   const handleUserSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userForm.name.trim() || !userForm.loginId.trim()) return;
-    
-    const trimmedId = userForm.loginId.trim();
-    
+    const trimmedName = userForm.name.trim();
+    if (!trimmedName) return;
+
     // Check duplication
     const isDuplicate = users.some(
-      u => u.loginId === trimmedId && (!editingUser || u.id !== editingUser.id)
+      u => u.name === trimmedName && (!editingUser || u.id !== editingUser.id)
     );
 
     if (isDuplicate) {
-      setUserFormError('このログインIDはすでに別のスタッフに割り当てられています。');
+      setUserFormError('同姓同名のスタッフが既に登録されています。区別できる表記（例：佐藤 健一(A)）にしてください。');
       return;
     }
 
     if (editingUser) {
-      setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...userForm, loginId: trimmedId } : u));
+      setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, name: trimmedName, role: userForm.role } : u));
       if (currentUser?.id === editingUser.id) {
-        setCurrentUser(prev => prev ? { ...prev, ...userForm, loginId: trimmedId } : null);
+        setCurrentUser(prev => prev ? { ...prev, name: trimmedName, role: userForm.role } : null);
       }
       setNotification('スタッフ情報を更新しました');
     } else {
       const newUser: User = {
         id: `u${Date.now()}`,
-        name: userForm.name.trim(),
-        loginId: trimmedId,
+        name: trimmedName,
         role: userForm.role,
+        password: '0000',
+        isInitialPassword: true,
       };
       setUsers(prev => [...prev, newUser]);
-      setNotification('新規スタッフを登録しました');
+      setNotification('新規スタッフを登録しました（初期パスワード: 0000）');
     }
     setIsUserModalOpen(false);
   };
@@ -425,8 +509,8 @@ export default function App() {
             {/* Password Field */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-slate-700 tracking-wider uppercase">
-                  パスワード
+                <label className="text-xs font-bold text-slate-700 tracking-wider">
+                  パスワード（数字4文字）
                 </label>
                 <button
                   type="button"
@@ -444,14 +528,20 @@ export default function App() {
                 <input 
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="current-password"
+                  inputMode="numeric"
+                  maxLength={4}
                   value={passwordInput}
-                  onChange={(e) => { setPasswordInput(e.target.value); setLoginError(''); }}
-                  className={`w-full bg-slate-50 border rounded-xl pl-10 pr-10 py-3 text-slate-800 font-mono text-base focus:ring-3 focus:outline-none transition-all ${
+                  onChange={(e) => { 
+                    const val = e.target.value.replace(/[^0-9]/g, '');
+                    setPasswordInput(val); 
+                    setLoginError(''); 
+                  }}
+                  className={`w-full bg-slate-50 border rounded-xl pl-10 pr-10 py-3 text-slate-800 font-mono tracking-widest text-base focus:ring-3 focus:outline-none transition-all ${
                     loginError 
                       ? 'border-rose-300 focus:ring-rose-100 bg-rose-50/50' 
                       : 'border-slate-200 focus:ring-indigo-100 focus:border-indigo-500'
                   }`}
-                  placeholder="パスワードを入力"
+                  placeholder="数字4桁を入力"
                 />
                 <button
                   type="button"
@@ -462,6 +552,9 @@ export default function App() {
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
+              </div>
+              <div className="text-[11px] text-slate-500 mt-1.5 font-medium">
+                ※ パスワードをお忘れの場合は職場長に報告をお願いします
               </div>
             </div>
 
@@ -507,7 +600,7 @@ export default function App() {
         {/* Forgot Password Modal */}
         <AnimatePresence>
           {isForgotPasswordModalOpen && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -517,7 +610,7 @@ export default function App() {
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
                   <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
                     <Lock size={17} className="text-indigo-600" />
-                    <span>スタッフ名・パスワードの確認について</span>
+                    <span>パスワードをお忘れの場合</span>
                   </div>
                   <button 
                     onClick={() => setIsForgotPasswordModalOpen(false)}
@@ -527,27 +620,14 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="space-y-3.5 text-xs text-slate-600 leading-relaxed">
-                  <p>
-                    セキュリティ保護のため、パスワードの再発行およびスタッフ名の照会は、所属施設のシフト管理者またはシステム統括窓口にて承っております。
-                  </p>
-                  
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1.5 font-sans">
-                    <div className="font-bold text-slate-800">【施設内 お問い合わせ窓口】</div>
-                    <div className="text-slate-600">担当：シフト管理統括担当（山田 施設長）</div>
-                    <div className="text-slate-600">内線番号：<span className="font-mono font-bold text-indigo-600">8100</span></div>
-                    <div className="text-[11px] text-slate-500">※ 受付時間：平日 8:30 ～ 17:30</div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    ※ 職員証をご用意の上、担当者まで直接お申し出ください。
-                  </p>
+                <div className="py-4 text-sm font-bold text-slate-700 leading-relaxed text-center bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  パスワードをお忘れの場合は職場長に報告をお願いします。
                 </div>
 
                 <div className="mt-5 pt-3 border-t border-slate-100 flex justify-end">
                   <button
                     onClick={() => setIsForgotPasswordModalOpen(false)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-colors shadow-xs"
                   >
                     閉じる
                   </button>
@@ -596,31 +676,24 @@ export default function App() {
             </h1>
           </div>
 
-          {/* User Account Controls */}
-          <div className="flex items-center space-x-3 ml-auto">
+          {/* User Account Controls & Settings */}
+          <div className="flex items-center space-x-2 sm:space-x-3 ml-auto">
             
-            {/* Print trigger */}
-            {currentUser.role === 'manager' && activeTab === 'calendar' && (
+            {/* Settings Gear Button for Manager (Opens シフト管理, スタッフ管理, 印刷プレビュー) */}
+            {currentUser.role === 'manager' && (
               <button 
-                onClick={() => setActiveTab('print')}
-                className="hidden sm:flex items-center space-x-1.5 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 px-3.5 py-2 rounded-xl font-bold text-xs transition-all border border-indigo-200/40"
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 sm:px-3 sm:py-2 text-slate-700 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 rounded-xl transition-all flex items-center space-x-1.5 bg-white shadow-3xs active:scale-95"
+                title="システム設定メニュー（シフト管理・スタッフ管理・印刷プレビュー）"
               >
-                <Printer size={13} />
-                <span>印刷プレビュー</span>
+                <Settings size={16} className="text-slate-600 shrink-0" />
+                <span className="text-xs font-bold hidden sm:inline">設定</span>
               </button>
             )}
 
             {/* User Profile Info */}
             <div className="flex items-center space-x-2 pl-3 border-l border-slate-200">
-              {/* Settings Gear Button */}
-              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 rounded-xl transition-all flex items-center bg-slate-50/50 shadow-3xs"
-                title="表示切替・システム管理メニュー"
-              >
-                <Settings size={15} className="shrink-0 animate-spin-slow" />
-              </button>
-
               <div className="flex flex-col items-end">
                 <span className="font-bold text-xs text-slate-800">{currentUser.name}</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold leading-none mt-0.5 ${
@@ -674,6 +747,7 @@ export default function App() {
             currentUser={currentUser}
             onOpenUserModal={openUserModal}
             onDeleteUser={deleteUser}
+            onResetPassword={handleManagerResetPassword}
           />
         )}
 
@@ -693,7 +767,7 @@ export default function App() {
       {/* MODAL: Shift request registration */}
       <AnimatePresence>
         {isRequestModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print">
+          <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4 no-print">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -738,11 +812,11 @@ export default function App() {
                       希望するシフト
                     </label>
                     
-                    <div className="grid grid-cols-3 gap-2">
-                      {SHIFT_TYPES.filter(t => t.code !== '').map(type => (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {getSelectableShifts(currentUser.role).filter(t => t.code !== '').map(type => (
                         <label 
                           key={type.code} 
-                          className={`cursor-pointer border-2 rounded-xl p-3 text-center transition-all flex flex-col items-center justify-center ${
+                          className={`cursor-pointer border-2 rounded-xl p-2.5 text-center transition-all flex flex-col items-center justify-center ${
                             requestForm.shiftCode === type.code 
                               ? `${type.color} border-indigo-500 ring-2 ring-indigo-100 ring-offset-1 scale-[1.03] font-bold` 
                               : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -756,8 +830,8 @@ export default function App() {
                             onChange={(e) => setRequestForm({...requestForm, shiftCode: e.target.value as ShiftCode})}
                             className="sr-only"
                           />
-                          <span className="text-base font-bold">{type.code}</span>
-                          <span className="text-[9px] font-medium opacity-80 mt-0.5">{type.label}</span>
+                          <span className="text-sm font-black">{type.buttonDisplay || type.code}</span>
+                          <span className="text-[9px] font-medium opacity-80 mt-0.5 truncate max-w-full">{type.label}</span>
                         </label>
                       ))}
                     </div>
@@ -804,7 +878,7 @@ export default function App() {
       {/* MODAL: User creation or editing */}
       <AnimatePresence>
         {isUserModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print">
+          <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4 no-print">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -850,24 +924,6 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Login ID field */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      ログインID
-                    </label>
-                    <input 
-                      type="text" 
-                      value={userForm.loginId}
-                      onChange={(e) => setUserForm({...userForm, loginId: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-mono font-bold tracking-widest text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all"
-                      placeholder="例: 1005 (半角英数字)"
-                      required
-                    />
-                    <span className="text-[10px] text-slate-400 font-medium mt-1 block">
-                      ※ログイン時に使用する他と重複しないユニークなキーを入力してください。
-                    </span>
-                  </div>
-
                   {/* Role selection */}
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
@@ -879,9 +935,38 @@ export default function App() {
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-bold text-slate-800 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all"
                     >
                       <option value="employee">一般スタッフ (勤務希望の入力、カレンダー閲覧)</option>
-                      <option value="manager">管理者 (全シフト決定、スタッフ・アカウント管理)</option>
+                      <option value="manager">管理者 (全シフト決定、スタッフ管理)</option>
                     </select>
                   </div>
+
+                  {/* Password status / Reset in edit mode */}
+                  {editingUser && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                        パスワード
+                      </label>
+                      <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <span className="text-xs text-slate-600">
+                          {editingUser.isInitialPassword || editingUser.password === '0000' ? (
+                            <span className="text-amber-700 font-bold">初期値「0000」（未設定）</span>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">設定済み（数字4文字）</span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, password: '0000', isInitialPassword: true } : u));
+                            setNotification(`${editingUser.name}さんのパスワードを初期値「0000」にリセットしました`);
+                            setIsUserModalOpen(false);
+                          }}
+                          className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          「0000」に初期化
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Actions */}
@@ -906,10 +991,12 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* MODAL: Settings and View Mode Toggles */}
+
+
+      {/* MODAL: Settings and Navigation Menu */}
       <AnimatePresence>
         {isSettingsOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print">
+          <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4 no-print">
             {/* Backdrop click to close */}
             <div className="absolute inset-0" onClick={() => setIsSettingsOpen(false)} />
 
@@ -920,12 +1007,15 @@ export default function App() {
               className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 relative z-10"
             >
               {/* Modal Header */}
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="font-display font-bold text-slate-800 flex items-center gap-2">
-                  <Settings size={18} className="text-indigo-600 animate-spin-slow" />
-                  <span>システム設定・メニュー</span>
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/70">
+                <h3 className="font-display font-bold text-slate-800 flex items-center gap-2 text-sm sm:text-base">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                    <Settings size={18} />
+                  </div>
+                  <span>設定・メニュー</span>
                 </h3>
                 <button
+                  type="button"
                   onClick={() => setIsSettingsOpen(false)}
                   className="text-slate-400 hover:text-slate-600 rounded-full p-1.5 hover:bg-slate-100 transition-all"
                 >
@@ -934,70 +1024,219 @@ export default function App() {
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 space-y-5">
+              <div className="p-5 sm:p-6 space-y-4">
                 {/* Account info card */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">ログイン中アカウント</span>
+                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">ログイン中のアカウント</span>
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-sm text-slate-800">{currentUser.name}</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                      currentUser.role === 'manager' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200/60' : 'bg-slate-200/60 text-slate-600'
-                    }`}>
-                      {currentUser.role === 'manager' ? '管理者（施設長）' : '一般スタッフ'}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                      管理者（施設長）
                     </span>
                   </div>
                 </div>
 
-                {/* Manager View switching */}
-                {currentUser.role === 'manager' && (
-                  <div className="space-y-2.5">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Users size={12} className="text-indigo-500" />
-                      <span>管理機能の選択</span>
-                    </h4>
-                    <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
-                      <button
-                        onClick={() => {
-                          setActiveTab('calendar');
-                          setIsSettingsOpen(false);
-                        }}
-                        className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          activeTab === 'calendar'
-                            ? 'bg-white text-indigo-700 shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        <CalendarIcon size={13} />
-                        <span>シフト管理</span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveTab('users');
-                          setIsSettingsOpen(false);
-                        }}
-                        className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-                          activeTab === 'users'
-                            ? 'bg-white text-indigo-700 shadow-xs'
-                            : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        <Users size={13} />
-                        <span>スタッフ管理</span>
-                      </button>
+                {/* Navigation Options: シフト管理, スタッフ管理, 印刷プレビュー */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block px-0.5">管理機能の選択</span>
+
+                  {/* 1. シフト管理 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('calendar');
+                      setIsSettingsOpen(false);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between group active:scale-98 ${
+                      activeTab === 'calendar'
+                        ? 'bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        activeTab === 'calendar' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                      }`}>
+                        <CalendarIcon size={20} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                          <span>シフト管理</span>
+                          {activeTab === 'calendar' && (
+                            <span className="text-[10px] bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded-md">表示中</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">カレンダー表示・シフト入力</p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                    <ChevronRight size={18} className="text-slate-400 group-hover:text-slate-600 shrink-0" />
+                  </button>
+
+                  {/* 2. スタッフ管理 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('users');
+                      setIsSettingsOpen(false);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between group active:scale-98 ${
+                      activeTab === 'users'
+                        ? 'bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        activeTab === 'users' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                      }`}>
+                        <Users size={20} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                          <span>スタッフ管理</span>
+                          {activeTab === 'users' && (
+                            <span className="text-[10px] bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded-md">表示中</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">スタッフアカウント一覧・追加・パスワード初期化</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-400 group-hover:text-slate-600 shrink-0" />
+                  </button>
+
+                  {/* 3. 印刷プレビュー */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('print');
+                      setIsSettingsOpen(false);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between group active:scale-98 ${
+                      activeTab === 'print'
+                        ? 'bg-indigo-50/80 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        activeTab === 'print' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 group-hover:bg-indigo-100 group-hover:text-indigo-600'
+                      }`}>
+                        <Printer size={20} />
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                          <span>印刷プレビュー</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">A4横向きの月間勤務表プレビュー・印刷</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={18} className="text-slate-400 group-hover:text-slate-600 shrink-0" />
+                  </button>
+                </div>
               </div>
 
               {/* Modal Footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
                 <button
+                  type="button"
                   onClick={() => setIsSettingsOpen(false)}
-                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-xl font-bold text-xs transition-all"
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-5 py-2.5 rounded-xl font-bold text-xs transition-all active:scale-95"
                 >
                   閉じる
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: Initial Login Password Reset */}
+      <AnimatePresence>
+        {isPasswordResetModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center z-50 p-4 no-print">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                  <Key size={18} />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-slate-800 text-sm">
+                    パスワードの再設定（初回ログイン）
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    初期パスワード（0000）から新しい数字4文字に変更してください
+                  </p>
+                </div>
+              </div>
+
+              {/* Form body */}
+              <form onSubmit={handlePasswordResetSubmit} className="p-6 space-y-4">
+                {passwordResetError && (
+                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs rounded-xl font-bold flex items-center gap-1.5">
+                    <ShieldAlert size={15} className="shrink-0" />
+                    <span>{passwordResetError}</span>
+                  </div>
+                )}
+
+                <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-xs text-indigo-900 leading-relaxed">
+                  <strong>{currentUser?.name}</strong> さん、ようこそ。<br />
+                  初期パスワード「0000」でログインされました。セキュリティ確保のため、ご自身のみが知る<strong>数字4文字のパスワード</strong>を設定してください。
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    新しいパスワード（数字4文字）
+                  </label>
+                  <input 
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={newPasswordInput}
+                    onChange={(e) => {
+                      setNewPasswordInput(e.target.value.replace(/[^0-9]/g, ''));
+                      setPasswordResetError('');
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-mono font-bold tracking-widest text-slate-800 focus:outline-none focus:ring-3 focus:ring-indigo-100 focus:border-indigo-500 text-center text-lg"
+                    placeholder="例: 5824"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    新しいパスワード（確認用）
+                  </label>
+                  <input 
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={confirmPasswordInput}
+                    onChange={(e) => {
+                      setConfirmPasswordInput(e.target.value.replace(/[^0-9]/g, ''));
+                      setPasswordResetError('');
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 font-mono font-bold tracking-widest text-slate-800 focus:outline-none focus:ring-3 focus:ring-indigo-100 focus:border-indigo-500 text-center text-lg"
+                    placeholder="もう一度入力"
+                    required
+                  />
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-bold text-xs shadow-md transition-all active:scale-98"
+                  >
+                    パスワードを設定して利用開始
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

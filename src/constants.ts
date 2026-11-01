@@ -1,21 +1,21 @@
-import { User, ShiftType, ScheduleData } from './types';
+import { User, ShiftType, ScheduleData, ShiftCode } from './types';
 
 export const INITIAL_USERS: User[] = [
-  { id: 'u99', name: '山田 施設長', role: 'manager', loginId: 'admin' },
-  { id: 'u1', name: '佐藤 健一', role: 'employee', loginId: '1001' },
-  { id: 'u2', name: '鈴木 花子', role: 'employee', loginId: '1002' },
-  { id: 'u3', name: '高橋 大輔', role: 'employee', loginId: '1003' },
-  { id: 'u4', name: '田中 美咲', role: 'employee', loginId: '1004' },
-  { id: 'u5', name: '渡辺 翔太', role: 'employee', loginId: '1005' },
-  { id: 'u6', name: '小林 裕子', role: 'employee', loginId: '1006' },
-  { id: 'u7', name: '加藤 恵', role: 'employee', loginId: '1007' },
-  { id: 'u8', name: '吉田 翼', role: 'employee', loginId: '1008' },
-  { id: 'u9', name: '山田 陽介', role: 'employee', loginId: '1009' },
-  { id: 'u10', name: '佐々木 翔', role: 'employee', loginId: '1010' },
-  { id: 'u11', name: '山口 結衣', role: 'employee', loginId: '1011' },
-  { id: 'u12', name: '松本 陸', role: 'employee', loginId: '1012' },
-  { id: 'u13', name: '井上 真央', role: 'employee', loginId: '1013' },
-  { id: 'u14', name: '木村 拓哉', role: 'employee', loginId: '1014' },
+  { id: 'u99', name: '山田 施設長', role: 'manager', password: '1234', isInitialPassword: false },
+  { id: 'u1', name: '佐藤 健一', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u2', name: '鈴木 花子', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u3', name: '高橋 大輔', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u4', name: '田中 美咲', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u5', name: '渡辺 翔太', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u6', name: '小林 裕子', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u7', name: '加藤 恵', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u8', name: '吉田 翼', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u9', name: '山田 陽介', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u10', name: '佐々木 翔', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u11', name: '山口 結衣', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u12', name: '松本 陸', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u13', name: '井上 真央', role: 'employee', password: '0000', isInitialPassword: true },
+  { id: 'u14', name: '木村 拓哉', role: 'employee', password: '0000', isInitialPassword: true },
 ];
 
 export const SHIFT_TYPES: ShiftType[] = [
@@ -26,12 +26,23 @@ export const SHIFT_TYPES: ShiftType[] = [
   { code: 'CE', label: 'CE', color: 'bg-cyan-50 text-cyan-700 border-cyan-200', bgClass: 'bg-cyan-50 hover:bg-cyan-100/80', textColor: 'text-cyan-700', borderClass: 'border-cyan-200' },
   { code: 'OPE', label: 'OPE', color: 'bg-amber-50 text-amber-700 border-amber-200', bgClass: 'bg-amber-50 hover:bg-amber-100/80', textColor: 'text-amber-700', borderClass: 'border-amber-200' },
   { code: '透', label: '透析', color: 'bg-teal-50 text-teal-700 border-teal-200', bgClass: 'bg-teal-50 hover:bg-teal-100/80', textColor: 'text-teal-700', borderClass: 'border-teal-200' },
-  { code: '有', label: '有給', color: 'bg-violet-50 text-violet-700 border-violet-200', bgClass: 'bg-violet-50 hover:bg-violet-100/80', textColor: 'text-violet-700', borderClass: 'border-violet-200' },
+  { code: '有', label: '有給', buttonDisplay: '有', color: 'bg-violet-50 text-violet-700 border-violet-200', bgClass: 'bg-violet-50 hover:bg-violet-100/80', textColor: 'text-violet-700', borderClass: 'border-violet-200' },
+  { code: 'AM有', label: 'AM有給', buttonDisplay: 'AM有', color: 'bg-purple-50 text-purple-700 border-purple-200', bgClass: 'bg-purple-50 hover:bg-purple-100/80', textColor: 'text-purple-700', borderClass: 'border-purple-200' },
+  { code: 'PM有', label: 'PM有給', buttonDisplay: 'PM有', color: 'bg-indigo-50 text-indigo-700 border-indigo-200', bgClass: 'bg-indigo-50 hover:bg-indigo-100/80', textColor: 'text-indigo-700', borderClass: 'border-indigo-200' },
   { code: '産', label: '産休', color: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200', bgClass: 'bg-fuchsia-50 hover:bg-fuchsia-100/80', textColor: 'text-fuchsia-700', borderClass: 'border-fuchsia-200' },
   { code: '出', label: '出張', color: 'bg-yellow-50 text-yellow-850 border-yellow-200', bgClass: 'bg-yellow-50 hover:bg-yellow-100/80', textColor: 'text-yellow-850', borderClass: 'border-yellow-200' },
   { code: '移', label: '移動', color: 'bg-slate-100 text-slate-700 border-slate-200', bgClass: 'bg-slate-100 hover:bg-slate-200/80', textColor: 'text-slate-700', borderClass: 'border-slate-300' },
   { code: '応', label: '応援', color: 'bg-lime-50 text-lime-700 border-lime-200', bgClass: 'bg-lime-50 hover:bg-lime-100/80', textColor: 'text-lime-700', borderClass: 'border-lime-200' },
 ];
+
+/** 一般スタッフが選択不可なシフト種別（産休、移動、応援） */
+export const RESTRICTED_EMPLOYEE_SHIFTS: ShiftCode[] = ['産', '移', '応'];
+
+/** 権限に応じた選択可能シフト一覧の取得 */
+export const getSelectableShifts = (role: 'manager' | 'employee'): ShiftType[] => {
+  if (role === 'manager') return SHIFT_TYPES;
+  return SHIFT_TYPES.filter(type => !RESTRICTED_EMPLOYEE_SHIFTS.includes(type.code));
+};
 
 // Seed some schedules for May 2026 to make it instantly rich and informative.
 export const INITIAL_SCHEDULE: ScheduleData = {

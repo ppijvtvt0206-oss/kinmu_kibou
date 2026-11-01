@@ -100,6 +100,8 @@ export function getShiftTextColor(code?: string): string {
     case 'OPE': return 'text-amber-700 font-black';
     case '透': return 'text-teal-700 font-bold';
     case '有': return 'text-violet-700 font-bold';
+    case 'AM有': return 'text-purple-700 font-bold';
+    case 'PM有': return 'text-indigo-700 font-bold';
     case '産': return 'text-fuchsia-700 font-bold';
     case '出': return 'text-yellow-800 font-bold';
     case '移': return 'text-slate-700 font-bold';
@@ -111,6 +113,8 @@ export function getShiftTextColor(code?: string): string {
 export function getShiftCellBg(date: Date, shiftCode?: string): string {
   if (shiftCode === '休') return 'bg-rose-50/50 hover:bg-rose-100/50';
   if (shiftCode === '有') return 'bg-violet-50/35 hover:bg-violet-100/45';
+  if (shiftCode === 'AM有') return 'bg-purple-50/35 hover:bg-purple-100/45';
+  if (shiftCode === 'PM有') return 'bg-indigo-50/35 hover:bg-indigo-100/45';
   if (shiftCode === '産') return 'bg-fuchsia-50/35 hover:bg-fuchsia-100/45';
 
   const day = date.getDay();

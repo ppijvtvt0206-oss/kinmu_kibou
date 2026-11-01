@@ -4,14 +4,17 @@ export interface User {
   id: string;
   name: string;
   role: UserRole;
-  loginId: string;
+  password?: string;
+  isInitialPassword?: boolean;
+  loginId?: string;
 }
 
-export type ShiftCode = '休' | '日' | '早' | 'CE' | 'OPE' | '透' | '有' | '産' | '出' | '移' | '応' | '';
+export type ShiftCode = '休' | '日' | '早' | 'CE' | 'OPE' | '透' | '有' | 'AM有' | 'PM有' | '産' | '出' | '移' | '応' | '';
 
 export interface ShiftType {
   code: ShiftCode;
   label: string;
+  buttonDisplay?: string;
   color: string; // Tailwind class
   bgClass: string;
   textColor: string;

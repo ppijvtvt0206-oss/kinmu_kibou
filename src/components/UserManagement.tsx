@@ -7,6 +7,7 @@ interface UserManagementProps {
   currentUser: User;
   onOpenUserModal: (user?: User) => void;
   onDeleteUser: (userId: string) => void;
+  onResetPassword?: (userId: string) => void;
 }
 
 export default function UserManagement({
@@ -14,6 +15,7 @@ export default function UserManagement({
   currentUser,
   onOpenUserModal,
   onDeleteUser,
+  onResetPassword,
 }: UserManagementProps) {
   return (
     <div className="max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-3 duration-300">
@@ -23,10 +25,10 @@ export default function UserManagement({
         <div>
           <h2 className="text-xl font-display font-semibold text-slate-800 flex items-center">
             <UserCog size={22} className="mr-2 text-indigo-600" />
-            スタッフ・ID管理
+            スタッフ管理
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            システムにログインするためのアカウントIDと、表示されるスタッフ情報を管理します。
+            シフト表に表示されるスタッフ情報およびパスワード状態を管理します。
           </p>
         </div>
         
@@ -39,14 +41,14 @@ export default function UserManagement({
         </button>
       </div>
 
-      {/* Info Notice about ID Authentication */}
+      {/* Info Notice about Authentication */}
       <div className="mb-6 p-4 bg-amber-50/50 border border-amber-100 rounded-xl flex items-start space-x-3 text-slate-600">
         <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
         <div className="text-xs space-y-1">
-          <span className="font-bold text-slate-700 block">💡 ログインについてのご注意</span>
+          <span className="font-bold text-slate-700 block">💡 ログインパスワードについて</span>
           <p>
-            スタッフは「スタッフ名」（または登録されたログインID）を入力するだけで簡単に本システムにログインできます。
-            管理者アカウントはスタッフ名「山田 施設長」（または <code className="font-mono bg-indigo-100 text-indigo-800 px-1 rounded font-semibold">admin</code>）でログイン可能です。
+            スタッフは名前を選択し、設定した数字4桁のパスワードでログインします。<br />
+            管理者のパスワードは「1234」、新規スタッフの初期パスワードは「0000」です（初回ログイン時に変更画面が表示されます）。
           </p>
         </div>
       </div>
@@ -57,16 +59,17 @@ export default function UserManagement({
           <table className="w-full text-xs text-left border-collapse table-auto">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider">
-                <th className="p-4 pl-6 text-sm font-semibold whitespace-nowrap min-w-[180px]">スタッフ氏名</th>
+                <th className="p-4 pl-6 text-sm font-semibold whitespace-nowrap min-w-[200px]">スタッフ氏名</th>
                 <th className="p-4 text-sm font-semibold whitespace-nowrap min-w-[160px]">権限レベル</th>
-                <th className="p-4 text-sm font-semibold whitespace-nowrap min-w-[120px]">ログインID</th>
-                <th className="p-4 pr-6 text-right text-sm font-semibold whitespace-nowrap min-w-[120px]">操作アクション</th>
+                <th className="p-4 text-sm font-semibold whitespace-nowrap min-w-[130px]">パスワード状態</th>
+                <th className="p-4 pr-6 text-right text-sm font-semibold whitespace-nowrap min-w-[160px]">操作アクション</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {users.map(user => {
                 const isSelf = user.id === currentUser.id;
                 const isManager = user.role === 'manager';
+                const isInitial = user.isInitialPassword || user.password === '0000';
 
                 return (
                   <tr key={user.id} className="hover:bg-slate-50/50 transition-all">
@@ -85,7 +88,6 @@ export default function UserManagement({
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-slate-400 font-medium block">ID: {user.id}</span>
                         </div>
                       </div>
                     </td>
@@ -98,20 +100,37 @@ export default function UserManagement({
                           : 'bg-slate-100 text-slate-600 border-slate-200/50'
                       }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isManager ? 'bg-indigo-500' : 'bg-slate-400'}`}></span>
-                        {isManager ? '管理者 (編集可能)' : '一般スタッフ (閲覧・希望)'}
+                        {isManager ? '管理者 (全操作可能)' : '一般スタッフ (希望提出)'}
                       </span>
                     </td>
 
-                    {/* Login ID Token */}
+                    {/* Password Status */}
                     <td className="p-4 whitespace-nowrap">
-                      <span className="font-mono font-bold tracking-wider text-xs bg-slate-100/80 border border-slate-200 px-2.5 py-1 rounded-lg text-slate-700 shadow-3xs whitespace-nowrap">
-                        {user.loginId}
-                      </span>
+                      {isInitial ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          初期設定（0000）
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          設定済み（●●●●）
+                        </span>
+                      )}
                     </td>
 
                     {/* Operations */}
                     <td className="p-4 pr-6 text-right whitespace-nowrap">
                       <div className="flex justify-end items-center space-x-1 whitespace-nowrap">
+                        {onResetPassword && !isSelf && (
+                          <button 
+                            onClick={() => onResetPassword(user.id)}
+                            className="p-2 text-amber-700 hover:bg-amber-50 rounded-lg transition-colors font-semibold flex items-center space-x-1 whitespace-nowrap"
+                            title={`${user.name}さんのパスワードを初期値「0000」にリセットします`}
+                          >
+                            <Key size={14} />
+                            <span className="text-[11px]">0000に初期化</span>
+                          </button>
+                        )}
+
                         <button 
                           onClick={() => onOpenUserModal(user)}
                           className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-semibold flex items-center space-x-1 whitespace-nowrap"

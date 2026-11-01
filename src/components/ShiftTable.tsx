@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, ShiftType, ScheduleData, ShiftCode } from '../types';
-import { SHIFT_TYPES } from '../constants';
+import { SHIFT_TYPES, getSelectableShifts, RESTRICTED_EMPLOYEE_SHIFTS } from '../constants';
 import { ChevronLeft, ChevronRight, AlertCircle, Check, HelpCircle, CalendarDays, RefreshCw, X, Lock, Clock, CalendarCheck2, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { isJapaneseHoliday, getJapaneseHolidayName, getShiftTextColor, getShiftCellBg } from '../utils';
@@ -65,75 +65,23 @@ export default function ShiftTable({
   // Active staff statistics user
   const [selectedStaffStatsUser, setSelectedStaffStatsUser] = useState<User | null>(null);
 
-  // Batch/bulk input modal states
-  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
-  const [batchForm, setBatchForm] = useState({
-    userId: '',
-    startDate: '',
-    endDate: '',
-    shiftCode: '有' as ShiftCode,
-  });
-  const [batchError, setBatchError] = useState('');
-  const [batchSuccess, setBatchSuccess] = useState('');
+  // Status transition confirmation state
+  const [statusConfirmTarget, setStatusConfirmTarget] = useState<'open' | 'closed' | 'finalized' | null>(null);
 
-  const handleOpenBatchModal = () => {
-    const defaultUser = employees[0]?.id || '';
-    if (daysInMonth.length > 0) {
-      const firstDay = formatDate(daysInMonth[0]);
-      const lastDay = formatDate(daysInMonth[daysInMonth.length - 1]);
-      setBatchForm({
-        userId: defaultUser,
-        startDate: firstDay,
-        endDate: lastDay,
-        shiftCode: '有' as ShiftCode,
-      });
-    } else {
-      setBatchForm(prev => ({ ...prev, userId: defaultUser }));
-    }
-    setBatchError('');
-    setBatchSuccess('');
-    setIsBatchModalOpen(true);
+  const handleRequestStatusChange = (newStatus: 'open' | 'closed' | 'finalized') => {
+    if (newStatus === scheduleStatus) return;
+    setStatusConfirmTarget(newStatus);
   };
 
-  const handleBatchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const { userId, startDate, endDate, shiftCode } = batchForm;
-    if (!userId || !startDate || !endDate) {
-      setBatchError('入力項目に漏れがあります。');
-      return;
+  const handleConfirmStatusChange = () => {
+    if (statusConfirmTarget) {
+      setScheduleStatus(statusConfirmTarget);
+      setStatusConfirmTarget(null);
     }
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    if (start > end) {
-      setBatchError('開始日は終了日以前の日付を指定してください。');
-      return;
-    }
-
-    setScheduleData(prev => {
-      const nextData = { ...prev };
-      const current = new Date(start);
-      while (current <= end) {
-        const dateStr = formatDate(current);
-        if (!nextData[dateStr]) {
-          nextData[dateStr] = {};
-        }
-        const existing = nextData[dateStr][userId] || { request: '', final: '' };
-        nextData[dateStr][userId] = {
-          request: existing.request,
-          final: shiftCode,
-        };
-        current.setDate(current.getDate() + 1);
-      }
-      return nextData;
-    });
-
-    const targetUser = users.find(u => u.id === userId);
-    setBatchSuccess(`${targetUser?.name}さんの ${startDate} 〜 ${endDate} 期間に【${shiftCode}】を一括反映しました。`);
-    setTimeout(() => {
-      setIsBatchModalOpen(false);
-    }, 1500);
   };
+
+  // Manager active shift selection for top bar
+  const [selectedShiftCode, setSelectedShiftCode] = useState<ShiftCode | null>('日');
 
 
 
@@ -146,10 +94,15 @@ export default function ShiftTable({
     
     // Exact match
     const exact = SHIFT_TYPES.find(t => t.code.toLowerCase() === trimmed.toLowerCase());
-    if (exact) return exact.code as ShiftCode;
+    if (exact) {
+      if (!isManager && RESTRICTED_EMPLOYEE_SHIFTS.includes(exact.code)) return '' as ShiftCode;
+      return exact.code as ShiftCode;
+    }
 
     // Smart shortcuts & typing support
     const upper = trimmed.toUpperCase();
+    if (upper === 'AM' || upper === 'AM有' || upper === 'AM有給' || trimmed === '午前有給' || trimmed === '午前休' || trimmed === '午前半休') return 'AM有';
+    if (upper === 'PM' || upper === 'PM有' || upper === 'PM有給' || trimmed === '午後有給' || trimmed === '午後休' || trimmed === '午後半休') return 'PM有';
     if (upper === 'C' || upper === 'CE') return 'CE';
     if (upper === 'O' || upper === 'OP' || upper === 'OPE') return 'OPE';
     if (upper === 'D' || trimmed === 'に' || trimmed === '日勤') return '日';
@@ -157,35 +110,49 @@ export default function ShiftTable({
     if (upper === 'T' || trimmed === 'と' || trimmed === '透析') return '透';
     if (upper === 'K' || trimmed === 'き' || trimmed === '休み' || trimmed === '公休') return '休';
     if (upper === 'Y' || trimmed === 'ゆ' || trimmed === '有給') return '有';
-    if (upper === 'S' || trimmed === 'さ' || trimmed === '産休') return '産';
     if (trimmed === 'し' || trimmed === '出張') return '出';
-    if (trimmed === 'い' || trimmed === '移動') return '移';
-    if (trimmed === 'お' || trimmed === '応援') return '応';
+
+    // Manager-only shifts
+    if (isManager) {
+      if (upper === 'S' || trimmed === 'さ' || trimmed === '産休') return '産';
+      if (trimmed === 'い' || trimmed === '移動') return '移';
+      if (trimmed === 'お' || trimmed === '応援') return '応';
+    }
 
     // If matches first character of any valid code
     const firstMatch = SHIFT_TYPES.find(t => t.code && t.code === trimmed[0]);
-    if (firstMatch) return firstMatch.code as ShiftCode;
+    if (firstMatch) {
+      if (!isManager && RESTRICTED_EMPLOYEE_SHIFTS.includes(firstMatch.code)) return '' as ShiftCode;
+      return firstMatch.code as ShiftCode;
+    }
 
     return '' as ShiftCode;
   };
 
   // Helper to commit shift change directly into cell
-  const handleCommitShift = (dateStr: string, userId: string, rawCode: string) => {
+  const handleCommitShift = (dateStr: string, userId: string, rawCode: string, optionalMemo?: string) => {
     const code = normalizeShiftCode(rawCode);
+    if (!isManager && RESTRICTED_EMPLOYEE_SHIFTS.includes(code)) {
+      return;
+    }
     setScheduleData(prev => {
       const next = { ...prev };
       if (!next[dateStr]) next[dateStr] = {};
       const existing = next[dateStr][userId] || { request: '', final: '' };
+      const memoToSet = optionalMemo !== undefined 
+        ? (optionalMemo.trim() ? optionalMemo.trim() : undefined) 
+        : existing.memo;
       if (isManager) {
-        next[dateStr][userId] = { ...existing, final: code };
+        next[dateStr][userId] = { ...existing, final: code, memo: memoToSet };
       } else {
         if (userId === currentUser.id) {
-          next[dateStr][userId] = { ...existing, request: code };
+          next[dateStr][userId] = { ...existing, request: code, memo: memoToSet };
         }
       }
       return next;
     });
-    setEditingCell(prev => prev ? { ...prev, currentValue: code } : null);
+    // Save and close palette modal
+    setEditingCell(null);
   };
 
   // Helper to save memo directly into cell
@@ -200,7 +167,8 @@ export default function ShiftTable({
       };
       return next;
     });
-    setEditingCell(prev => prev ? { ...prev, currentMemo: memo.trim() } : null);
+    // Save and close palette modal
+    setEditingCell(null);
   };
 
   // Calculate daily staffing stats
@@ -230,9 +198,8 @@ export default function ShiftTable({
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in duration-200">
       
-      {/* Table Header Area */}
-      <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-center gap-4">
-        
+      {/* Table Header Area - Centered Month Selector */}
+      <div className="p-3.5 sm:p-4 border-b border-slate-100 bg-slate-50/50 flex justify-center items-center">
         {/* Month Navigation */}
         <div className="flex items-center space-x-1 bg-white border border-slate-200 shadow-sm rounded-xl p-1">
           <button 
@@ -253,31 +220,13 @@ export default function ShiftTable({
             <ChevronRight size={20} />
           </button>
         </div>
-
-        {/* Legend / Info Label */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs font-medium text-slate-500">
-          <div className="hidden lg:flex items-center space-x-3">
-            <div className="flex items-center space-x-1 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md text-amber-800 text-[11px] font-bold">
-              <span>📝</span>
-              <span>詳細メモあり（ホバーで確認）</span>
-            </div>
-            {SHIFT_TYPES.map(type => (
-              <div key={type.code || 'undecided'} className="flex items-center space-x-1">
-                <span className={`text-xs font-black min-w-[14px] text-center ${getShiftTextColor(type.code)}`}>
-                  {type.code || '−'}
-                </span>
-                <span className="text-slate-600 font-bold text-[11px]">{type.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Workflow & Status Bar */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        {/* Status indicator */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">シフト提出状況:</span>
+      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 grid grid-cols-1 md:grid-cols-3 items-center gap-3">
+        {/* Left: Status indicator */}
+        <div className="flex items-center gap-2 justify-start">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider shrink-0">シフト提出状況:</span>
           {scheduleStatus === 'open' && (
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
@@ -298,73 +247,58 @@ export default function ShiftTable({
           )}
         </div>
 
-        {/* Action controllers (Manager can toggle, Employee sees locked state) */}
-        <div className="flex flex-wrap items-center gap-3">
-          {isManager ? (
-            <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+        {/* Center: Action controllers (Manager can toggle status, exactly centered) */}
+        <div className="flex items-center justify-center">
+          {isManager && (
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-xs">
               <button
-                onClick={() => setScheduleStatus('open')}
+                onClick={() => handleRequestStatusChange('open')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1 transition-all ${
                   scheduleStatus === 'open'
-                    ? 'bg-emerald-50 text-emerald-700 shadow-sm border border-emerald-200/50'
+                    ? 'bg-emerald-50 text-emerald-700 shadow-xs border border-emerald-200/50'
                     : 'text-slate-400 hover:text-slate-600'
                 }`}
                 title="希望受付を開始します"
               >
                 <Clock size={12} />
-                <span>受付中にする</span>
+                <span>受付中</span>
               </button>
 
               <button
-                onClick={() => setScheduleStatus('closed')}
+                onClick={() => handleRequestStatusChange('closed')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1 transition-all ${
                   scheduleStatus === 'closed'
-                    ? 'bg-amber-50 text-amber-700 shadow-sm border border-amber-200/50'
+                    ? 'bg-amber-50 text-amber-700 shadow-xs border border-amber-200/50'
                     : 'text-slate-400 hover:text-slate-600'
                 }`}
                 title="提出を締め切り、管理者調整に入ります"
               >
                 <Clock size={12} />
-                <span>受付終了にする</span>
+                <span>受付終了</span>
               </button>
 
               <button
-                onClick={() => setScheduleStatus('finalized')}
+                onClick={() => handleRequestStatusChange('finalized')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center space-x-1 transition-all ${
                   scheduleStatus === 'finalized'
-                    ? 'bg-indigo-50 text-indigo-700 shadow-sm border border-indigo-200/50'
+                    ? 'bg-indigo-50 text-indigo-700 shadow-xs border border-indigo-200/50'
                     : 'text-slate-400 hover:text-slate-600'
                 }`}
                 title="シフトを最終確定し、全員の表示をロックします"
               >
                 <Lock size={12} />
-                <span>シフト確定にする</span>
+                <span>シフト確定</span>
               </button>
             </div>
-          ) : (
-            <div className="text-[11px] font-semibold text-slate-400 flex items-center bg-slate-100 px-3 py-2 rounded-xl border border-slate-200/40">
-              <Lock size={12} className="mr-1.5" />
-              <span>一般スタッフはステータス操作不可</span>
-            </div>
           )}
+        </div>
 
-          {/* Manager specialized Long-Term Batch Input Trigger */}
-          {isManager && (
-            <button
-              onClick={handleOpenBatchModal}
-              className="flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 py-2 px-3.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-sm"
-              title="有給消化、産休、出張など、長期間におよぶ同一シフトを1回で一括登録します。"
-            >
-              <Sliders size={13} />
-              <span>長期一括入力 (有給・産休など)</span>
-            </button>
-          )}
-
-          {/* Show / Hide Coverage Stats Button (長期一括入力の右となりに配置) */}
+        {/* Right: Show / Hide Coverage Stats Button */}
+        <div className="flex items-center justify-end">
           {isManager && (
             <button
               onClick={() => setShowCoverageStats(!showCoverageStats)}
-              className={`px-3 py-2 border rounded-xl text-xs font-semibold shadow-sm transition-all active:scale-95 flex items-center space-x-1 ${
+              className={`px-3 py-1.5 border rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95 flex items-center space-x-1 ${
                 showCoverageStats 
                   ? 'bg-slate-100 border-slate-300 text-slate-700' 
                   : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -375,6 +309,65 @@ export default function ShiftTable({
           )}
         </div>
       </div>
+
+      {/* Calendar Top Shift Selection Toolbar (管理職専用: カレンダー上部勤務選択ボタン - 中央配置) */}
+      {isManager && (
+        <div className="bg-slate-50/90 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+            <span className="text-xs font-bold text-slate-700">勤務選択:</span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5">
+            {/* 専用ボタン: パレット入力モード */}
+            <button
+              type="button"
+              onClick={() => setSelectedShiftCode(null)}
+              className={`min-h-[32px] py-1 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center border shadow-2xs active:scale-95 select-none ${
+                selectedShiftCode === null
+                  ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-400 ring-offset-1 font-black shadow-xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+              title="パレット入力モード：マスをクリックしてパレットから勤務を選択したりメモを登録できます"
+            >
+              <span>パレット入力</span>
+            </button>
+
+            <span className="h-4 w-px bg-slate-250 mx-0.5 hidden sm:inline-block" />
+
+            {/* 各勤務ボタン（それぞれ固有の配色を設定・略称文字のみ表示） */}
+            {SHIFT_TYPES.map(type => {
+              const isSelected = selectedShiftCode === type.code;
+              const displayChar = type.code ? (type.buttonDisplay || type.code) : '消';
+              return (
+                <button
+                  key={type.code || 'clear'}
+                  type="button"
+                  onClick={() => {
+                    if (selectedShiftCode === type.code) {
+                      setSelectedShiftCode(null);
+                    } else {
+                      setSelectedShiftCode(type.code);
+                    }
+                  }}
+                  className={`min-h-[32px] min-w-[34px] py-1 px-2 rounded-xl text-xs font-black transition-all flex items-center justify-center border shadow-2xs active:scale-95 select-none ${
+                    type.color
+                  } ${
+                    isSelected
+                      ? 'ring-2 ring-indigo-600 ring-offset-1 scale-105 border-indigo-500 shadow-xs'
+                      : 'hover:brightness-95 hover:shadow-xs'
+                  }`}
+                  title={`${type.label} (${type.code || '消去'}) を選択（マスをクリックで即反映）`}
+                >
+                  <span className={`font-black ${displayChar.length > 2 ? 'text-[10px]' : 'text-xs'}`}>
+                    {displayChar}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Main Table Container */}
       <div className="w-full overflow-x-auto relative">
@@ -478,7 +471,34 @@ export default function ShiftTable({
                         onClick={(e) => {
                           if (!isEditable) return;
 
+                          // If manager and a shift is selected in the top bar, commit directly!
+                          if (isManager && selectedShiftCode !== null) {
+                            handleCommitShift(dateStr, user.id, selectedShiftCode);
+                            return;
+                          }
+
+                          // General staff (or manager with no shift selected):
                           // Open quick touch palette attached to this cell (マス選択モード)
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const currentVal = isManager ? cellData.final : cellData.request;
+                          setCellMemoInput(cellData.memo || '');
+                          setEditingCell({
+                            dateStr,
+                            userId: user.id,
+                            userName: user.name,
+                            currentValue: currentVal || '',
+                            currentMemo: cellData.memo || '',
+                            anchorRect: {
+                              top: rect.top,
+                              left: rect.left,
+                              bottom: rect.bottom,
+                              right: rect.right,
+                            }
+                          });
+                        }}
+                        onDoubleClick={(e) => {
+                          if (!isEditable) return;
+                          // Allow double click to open detail palette and memo input anytime
                           const rect = e.currentTarget.getBoundingClientRect();
                           const currentVal = isManager ? cellData.final : cellData.request;
                           setCellMemoInput(cellData.memo || '');
@@ -509,7 +529,6 @@ export default function ShiftTable({
                           }
                         }}
                         onMouseLeave={() => setHoveredMemo(null)}
-                        title={cellData.memo ? `【${user.name}】詳細メモ: ${cellData.memo}` : undefined}
                         className={`p-0.5 border-r border-slate-100 relative text-center transition-all h-9 ${
                           isEditing
                             ? 'ring-2 ring-indigo-500 bg-indigo-100/60 z-20'
@@ -545,8 +564,7 @@ export default function ShiftTable({
                           {/* Memo Indicator Icon (📝) */}
                           {cellData.memo && (
                             <span 
-                              className="absolute bottom-0 right-0 text-[8px] leading-none select-none drop-shadow-xs" 
-                              title={`詳細メモ: ${cellData.memo}`}
+                              className="absolute bottom-0 right-0 text-[8px] leading-none select-none drop-shadow-xs"
                             >
                               📝
                             </span>
@@ -604,171 +622,24 @@ export default function ShiftTable({
         </table>
       </div>
 
-
-      {/* Long-Term Bulk Input Modal */}
-      <AnimatePresence>
-        {isBatchModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100"
-            >
-              {/* Modal Header */}
-              <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="font-display font-bold text-slate-800 flex items-center gap-2">
-                  <Sliders size={18} className="text-indigo-600" />
-                  <span>長期一括入力 (管理者用)</span>
-                </h3>
-                <button
-                  onClick={() => setIsBatchModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 rounded-full p-1.5 hover:bg-slate-100 transition-all"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Modal Body */}
-              <form onSubmit={handleBatchSubmit} className="p-6 space-y-4">
-                {batchError && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-2">
-                    <AlertCircle size={14} className="shrink-0" />
-                    <span>{batchError}</span>
-                  </div>
-                )}
-
-                {batchSuccess && (
-                  <div className="p-4 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold rounded-xl flex flex-col items-center gap-2 text-center">
-                    <Check size={24} className="text-emerald-600 animate-bounce" />
-                    <span>{batchSuccess}</span>
-                  </div>
-                )}
-
-                {!batchSuccess && (
-                  <>
-                    {/* Staff selection */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-slate-600 block">
-                        対象スタッフ
-                      </label>
-                      <select
-                        value={batchForm.userId}
-                        onChange={(e) => setBatchForm(prev => ({ ...prev, userId: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-bold focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
-                        required
-                      >
-                        <option value="" disabled>スタッフを選択してください</option>
-                        {employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>
-                            {emp.name} ({emp.role === 'manager' ? '管理者' : '一般'})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Date range */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-600 block">
-                          開始日
-                        </label>
-                        <input
-                          type="date"
-                          value={batchForm.startDate}
-                          onChange={(e) => setBatchForm(prev => ({ ...prev, startDate: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-bold focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-600 block">
-                          終了日
-                        </label>
-                        <input
-                          type="date"
-                          value={batchForm.endDate}
-                          onChange={(e) => setBatchForm(prev => ({ ...prev, endDate: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-bold focus:outline-hidden focus:border-indigo-500 focus:bg-white transition-all"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    {/* Shift type selection */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-600 block">
-                        反映するシフトコード
-                      </label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {SHIFT_TYPES.map(type => (
-                          <button
-                            type="button"
-                            key={type.code || 'clear'}
-                            onClick={() => setBatchForm(prev => ({ ...prev, shiftCode: type.code as ShiftCode }))}
-                            className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 hover:scale-[1.03] active:scale-[0.97] ${
-                              batchForm.shiftCode === type.code
-                                ? 'ring-2 ring-indigo-600 ring-offset-1 ' + type.color
-                                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                            }`}
-                          >
-                            <span className="text-xs">{type.code || '削'}</span>
-                            <span className="text-[9px] font-medium opacity-80 truncate max-w-full">{type.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Help info */}
-                    <div className="bg-amber-50/50 border border-amber-100 p-3 rounded-2xl text-[11px] text-slate-600 leading-relaxed flex items-start gap-2">
-                      <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                      <span>
-                        ※ 産休・育休・有給消化、または出張・透析専任など、長期間にわたる特定のシフト予定を一括でカレンダーに上書き決定します。
-                      </span>
-                    </div>
-
-                    {/* Submit actions */}
-                    <div className="flex items-center space-x-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsBatchModalOpen(false)}
-                        className="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-3 rounded-2xl transition-all"
-                      >
-                        キャンセル
-                      </button>
-                      <button
-                        type="submit"
-                        className="w-2/3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-3 rounded-2xl transition-all shadow-md hover:shadow-indigo-500/10"
-                      >
-                        カレンダーに一括適用
-                      </button>
-                    </div>
-                  </>
-                )}
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* FLOATING QUICK TOUCH PALETTE AT ACTIVE CELL (完全タッチ操作対応) */}
       <AnimatePresence>
         {editingCell && (
           <>
             <div 
-              className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[1px]" 
+              className="fixed inset-0 z-40 bg-slate-900/10" 
               onClick={() => setEditingCell(null)} 
             />
             <div 
-              className="fixed z-50 bg-white/98 backdrop-blur-md border border-slate-200/90 shadow-2xl rounded-2xl p-3 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
+              className="fixed z-50 bg-white border border-slate-200 shadow-2xl rounded-2xl p-3 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
               style={(() => {
                 if (!editingCell.anchorRect) {
-                  return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', minWidth: '340px' };
+                  return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', minWidth: '360px' };
                 }
                 const vpW = typeof window !== 'undefined' ? window.innerWidth : 1000;
                 const vpH = typeof window !== 'undefined' ? window.innerHeight : 800;
-                const pW = 340;
-                const pH = 210;
+                const pW = 360;
+                const pH = isManager ? 280 : 220;
                 let left = editingCell.anchorRect.left + (editingCell.anchorRect.right - editingCell.anchorRect.left) / 2 - pW / 2;
                 left = Math.max(12, Math.min(left, vpW - pW - 12));
                 let top = editingCell.anchorRect.bottom + 6;
@@ -798,18 +669,19 @@ export default function ShiftTable({
                 </button>
               </div>
 
-              {/* Touch grid of all shifts */}
+              {/* Touch grid of selectable shifts */}
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                {SHIFT_TYPES.map(type => {
+                {getSelectableShifts(currentUser.role).map(type => {
                   const isCurrent = editingCell.currentValue === type.code;
+                  const displayChar = type.buttonDisplay || type.code || '消去';
                   return (
                     <button
                       key={type.code || 'clear'}
                       type="button"
                       onClick={() => {
-                        handleCommitShift(editingCell.dateStr, editingCell.userId, type.code);
+                        handleCommitShift(editingCell.dateStr, editingCell.userId, type.code, cellMemoInput);
                       }}
-                      className={`min-h-[44px] py-1.5 px-1 rounded-xl text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center border shadow-2xs select-none ${
+                      className={`min-h-[44px] py-1.5 px-0.5 rounded-xl text-xs font-black transition-all active:scale-95 flex flex-col items-center justify-center border shadow-2xs select-none ${
                         isCurrent
                           ? 'ring-2 ring-indigo-600 ring-offset-1 scale-[1.02] border-indigo-500'
                           : ''
@@ -820,14 +692,20 @@ export default function ShiftTable({
                       }`}
                       title={type.label}
                     >
-                      <span className="text-sm font-black leading-tight">{type.code || '消去'}</span>
-                      <span className="text-[8px] font-bold leading-tight opacity-75">{type.code ? type.label : 'クリア'}</span>
+                      <span className={`font-black leading-tight whitespace-nowrap ${
+                        displayChar.length > 2 ? 'text-[11px] tracking-tighter' : displayChar.length > 1 ? 'text-xs tracking-tight' : 'text-sm'
+                      }`}>
+                        {displayChar}
+                      </span>
+                      <span className="text-[8px] font-bold leading-tight opacity-75 truncate max-w-full">
+                        {type.code ? type.label : 'クリア'}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Memo input section for the cell (No template buttons) */}
+              {/* Memo input section for the cell */}
               <div className="border-t border-slate-100 pt-2 flex flex-col gap-1.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="font-bold text-slate-600 flex items-center gap-1">
@@ -902,7 +780,7 @@ export default function ShiftTable({
               top: `${Math.max(10, hoveredMemo.y - 8)}px`,
             }}
           >
-            <div className="bg-slate-900/95 text-white px-3 py-2 rounded-xl shadow-xl text-xs max-w-xs backdrop-blur-xs border border-slate-700/60 animate-in fade-in zoom-in-95 duration-100">
+            <div className="bg-slate-900 text-white px-3 py-2 rounded-xl shadow-xl text-xs max-w-xs border border-slate-700/60 animate-in fade-in zoom-in-95 duration-100">
               <div className="flex items-center gap-1.5 pb-1 border-b border-slate-700/80 mb-1 text-[11px] text-slate-300 font-bold">
                 <span>📝</span>
                 <span className="text-white font-extrabold">{hoveredMemo.userName}</span>
@@ -919,7 +797,7 @@ export default function ShiftTable({
       {/* STAFF STATS MODAL (Opens on clicking staff name!) */}
       <AnimatePresence>
         {selectedStaffStatsUser && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 no-print">
+          <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 no-print">
             <div className="absolute inset-0" onClick={() => setSelectedStaffStatsUser(null)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -980,6 +858,8 @@ export default function ShiftTable({
                         'OPE': 0,
                         '透': 0,
                         '有': 0,
+                        'AM有': 0,
+                        'PM有': 0,
                         'その他': 0,
                       };
 
@@ -1002,6 +882,8 @@ export default function ShiftTable({
                       const displayItems = [
                         { label: '休み', code: '休', count: counts['休'], color: 'bg-rose-50 text-rose-700 border-rose-200' },
                         { label: '有給', code: '有', count: counts['有'], color: 'bg-violet-50 text-violet-700 border-violet-200' },
+                        { label: 'AM有給', code: 'AM有', count: counts['AM有'], color: 'bg-purple-50 text-purple-700 border-purple-200' },
+                        { label: 'PM有給', code: 'PM有', count: counts['PM有'], color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
                         { label: '日勤', code: '日', count: counts['日'], color: 'bg-blue-50 text-blue-700 border-blue-200' },
                         { label: '早番', code: '早', count: counts['早'], color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
                         { label: 'CE', code: 'CE', count: counts['CE'], color: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
@@ -1039,6 +921,63 @@ export default function ShiftTable({
                   className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-md shadow-indigo-600/10"
                 >
                   閉じる
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal for Shift Submission Status Change */}
+      <AnimatePresence>
+        {statusConfirmTarget && (
+          <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 space-y-4"
+            >
+              <div className="flex items-center gap-2.5 text-slate-800 font-bold text-sm pb-2 border-b border-slate-100">
+                <AlertCircle size={18} className="text-amber-500 shrink-0" />
+                <span>シフト提出状況の変更確認</span>
+              </div>
+
+              <div className="text-xs text-slate-600 leading-relaxed space-y-2">
+                {statusConfirmTarget === 'open' && (
+                  <p>
+                    シフト提出状況を<strong className="text-emerald-700">「希望受付中」</strong>に変更しますか？<br />
+                    スタッフがシフト希望を再度登録・編集できるようになります。
+                  </p>
+                )}
+                {statusConfirmTarget === 'closed' && (
+                  <p>
+                    シフト提出状況を<strong className="text-amber-700">「受付終了（調整中）」</strong>に変更しますか？<br />
+                    一般スタッフによる希望の新規入力・編集は締め切られます。
+                  </p>
+                )}
+                {statusConfirmTarget === 'finalized' && (
+                  <p>
+                    シフト提出状況を<strong className="text-indigo-700">「シフト確定」</strong>に変更しますか？<br />
+                    シフト予定が確定版としてロックされ、全員の画面に最終決定として反映されます。
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setStatusConfirmTarget(null)}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition-all"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmStatusChange}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm"
+                >
+                  変更する
                 </button>
               </div>
             </motion.div>
