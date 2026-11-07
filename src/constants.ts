@@ -23,6 +23,8 @@ export const SHIFT_TYPES: ShiftType[] = [
   { code: '休', label: '休み', color: 'bg-rose-50 text-rose-700 border-rose-200', bgClass: 'bg-rose-50 hover:bg-rose-100/80', textColor: 'text-rose-700', borderClass: 'border-rose-200' },
   { code: '日', label: '日勤', color: 'bg-blue-50 text-blue-700 border-blue-200', bgClass: 'bg-blue-50 hover:bg-blue-100/80', textColor: 'text-blue-700', borderClass: 'border-blue-200' },
   { code: '早', label: '早番', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', bgClass: 'bg-emerald-50 hover:bg-emerald-100/80', textColor: 'text-emerald-700', borderClass: 'border-emerald-200' },
+  { code: '当', label: '当直', color: 'bg-indigo-900 text-white border-indigo-950', bgClass: 'bg-indigo-900 hover:bg-indigo-950 text-white', textColor: 'text-indigo-900', borderClass: 'border-indigo-800' },
+  { code: '明', label: '明け', color: 'bg-sky-100 text-sky-800 border-sky-300', bgClass: 'bg-sky-100 hover:bg-sky-200/80', textColor: 'text-sky-800', borderClass: 'border-sky-300' },
   { code: 'CE', label: 'CE', color: 'bg-cyan-50 text-cyan-700 border-cyan-200', bgClass: 'bg-cyan-50 hover:bg-cyan-100/80', textColor: 'text-cyan-700', borderClass: 'border-cyan-200' },
   { code: 'OPE', label: 'OPE', color: 'bg-amber-50 text-amber-700 border-amber-200', bgClass: 'bg-amber-50 hover:bg-amber-100/80', textColor: 'text-amber-700', borderClass: 'border-amber-200' },
   { code: '透', label: '透析', color: 'bg-teal-50 text-teal-700 border-teal-200', bgClass: 'bg-teal-50 hover:bg-teal-100/80', textColor: 'text-teal-700', borderClass: 'border-teal-200' },
@@ -102,4 +104,29 @@ export const INITIAL_SCHEDULE: ScheduleData = {
     'u5': { request: 'OPE', final: '' },
     'u6': { request: '休', final: '' },
   }
+};
+
+export const EVENT_CATEGORIES = [
+  { id: 'meeting' as const, label: '会議・打合せ', bgClass: 'bg-blue-50', textClass: 'text-blue-700', borderClass: 'border-blue-200', dotClass: 'bg-blue-500' },
+  { id: 'training' as const, label: '研修・勉強会', bgClass: 'bg-emerald-50', textClass: 'text-emerald-700', borderClass: 'border-emerald-200', dotClass: 'bg-emerald-500' },
+  { id: 'event' as const, label: '行事・健診', bgClass: 'bg-amber-50', textClass: 'text-amber-700', borderClass: 'border-amber-200', dotClass: 'bg-amber-500' },
+  { id: 'other' as const, label: 'その他', bgClass: 'bg-slate-100', textClass: 'text-slate-700', borderClass: 'border-slate-200', dotClass: 'bg-slate-500' },
+];
+
+export const INITIAL_EVENTS: import('./types').EventsData = {
+  '2026-05-01': [
+    { id: 'ev-1', title: '月次ミーティング・全体朝礼', time: '09:00 - 10:00', category: 'meeting', memo: '第1カンファレンスルーム' }
+  ],
+  '2026-05-08': [
+    { id: 'ev-2', title: '医療安全管理研修会', time: '14:00 - 15:30', category: 'training', memo: '全職員対象（オンライン同時配信あり）' }
+  ],
+  '2026-05-15': [
+    { id: 'ev-3', title: '感染防止対策委員会', time: '16:00 - 17:00', category: 'meeting', memo: '第2会議室' }
+  ],
+  '2026-05-20': [
+    { id: 'ev-4', title: '施設定期健康診断', time: '終日', category: 'event', memo: '受診指定時間を確認してください' }
+  ],
+  '2026-05-27': [
+    { id: 'ev-5', title: '業務改善・症例カンファレンス', time: '17:30 - 18:30', category: 'training', memo: '資料は共有フォルダにあります' }
+  ],
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { User, ScheduleData, ShiftCode } from './types';
-import { INITIAL_USERS, INITIAL_SCHEDULE, SHIFT_TYPES, getSelectableShifts, RESTRICTED_EMPLOYEE_SHIFTS } from './constants';
+import { User, ScheduleData, ShiftCode, EventsData } from './types';
+import { INITIAL_USERS, INITIAL_SCHEDULE, SHIFT_TYPES, INITIAL_EVENTS, getSelectableShifts, RESTRICTED_EMPLOYEE_SHIFTS } from './constants';
 import ShiftTable from './components/ShiftTable';
 import UserManagement from './components/UserManagement';
 import PrintView from './components/PrintView';
@@ -134,12 +134,18 @@ export default function App() {
     setNotification(`シフト提出状況を【${statusLabels[newStatus]}】に変更しました`);
   };
 
+  // Events and schedule notices data
+  const [eventsData, setEventsData] = useState<EventsData>(() => {
+    const saved = localStorage.getItem('shift_calendar_events');
+    return saved ? JSON.parse(saved) : INITIAL_EVENTS;
+  });
+
   // Success Notification state
   const [notification, setNotification] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Forms
-  const [requestForm, setRequestForm] = useState({ date: '2026-05-01', shiftCode: '休' as ShiftCode, memo: '' });
+  const [requestForm, setRequestForm] = useState({ date: '2026-05-01', shiftCode: '休' as ShiftCode, memo: '', standby: false });
   const [userForm, setUserForm] = useState({ name: '', role: 'employee' as 'manager' | 'employee' });
 
   const [loginInput, setLoginInput] = useState('');
@@ -184,6 +190,10 @@ export default function App() {
     localStorage.setItem('shift_month_status', JSON.stringify(monthStatusMap));
   }, [monthStatusMap]);
 
+  useEffect(() => {
+    localStorage.setItem('shift_calendar_events', JSON.stringify(eventsData));
+  }, [eventsData]);
+
   // Toast auto-clear
   useEffect(() => {
     if (notification) {
@@ -227,11 +237,12 @@ export default function App() {
 
   // Reset all to default system seed data
   const handleResetToDefault = () => {
-    if (window.confirm('全てのシフトデータ、およびスタッフアカウントを初期状態にリセットしますか？')) {
+    if (window.confirm('全てのシフトデータ、イベント予定、およびスタッフアカウントを初期状態にリセットしますか？')) {
       setUsers(INITIAL_USERS);
       setScheduleData(INITIAL_SCHEDULE);
+      setEventsData(INITIAL_EVENTS);
       setCurrentDate(new Date(2026, 4, 1));
-      setNotification('システムデータを初期状態に戻しました');
+      setNotification('システムデータおよび予定を初期状態に戻しました');
     }
   };
 
@@ -356,14 +367,17 @@ export default function App() {
       newData[dateStr][currentUser.id] = {
         ...existing,
         request: requestForm.shiftCode,
+        requestStandby: requestForm.standby,
+        ...(currentUser.role === 'manager' ? { standby: requestForm.standby } : {}),
         ...(requestForm.memo.trim() ? { memo: requestForm.memo.trim() } : {}),
       };
       return newData;
     });
 
     setIsRequestModalOpen(false);
-    setRequestForm(prev => ({ ...prev, memo: '' }));
-    setNotification(`${requestForm.date}の希望を【${requestForm.shiftCode}】として登録しました`);
+    setRequestForm(prev => ({ ...prev, memo: '', standby: false }));
+    const standbyText = requestForm.standby ? '【待機あり】' : '';
+    setNotification(`${requestForm.date}の希望を【${requestForm.shiftCode}】${standbyText}として登録しました`);
   };
 
   // --- Staff Operations ---
@@ -434,6 +448,7 @@ export default function App() {
         users={users}
         daysInMonth={daysInMonth}
         scheduleData={scheduleData}
+        eventsData={eventsData}
         currentDate={currentDate}
         formatDate={formatDate}
         getDayOfWeek={getDayOfWeek}
@@ -727,6 +742,8 @@ export default function App() {
               currentUser={currentUser}
               scheduleData={scheduleData}
               setScheduleData={setScheduleData}
+              eventsData={eventsData}
+              setEventsData={setEventsData}
               currentDate={currentDate}
               changeMonth={changeMonth}
               daysInMonth={daysInMonth}
@@ -849,6 +866,26 @@ export default function App() {
                       placeholder="例: 午前中のみ、所用のため17時退勤希望 など"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
+                  </div>
+
+                  {/* Standby toggle in request modal */}
+                  <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                    <div>
+                      <span className="text-xs font-bold text-slate-700 block">通常の勤務に加えて「待機」</span>
+                      <span className="text-[10px] text-slate-400 font-medium">オンコール担当の希望を同時に登録します</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRequestForm({ ...requestForm, standby: !requestForm.standby })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border shadow-2xs ${
+                        requestForm.standby
+                          ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-200'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${requestForm.standby ? 'bg-white' : 'bg-slate-400'}`}></span>
+                      <span>{requestForm.standby ? '待機ON' : '待機なし'}</span>
+                    </button>
                   </div>
 
                 </div>

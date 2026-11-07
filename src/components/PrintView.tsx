@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, ScheduleData } from '../types';
+import { User, ScheduleData, EventsData, CalendarEvent } from '../types';
 import { SHIFT_TYPES } from '../constants';
-import { Printer, ArrowLeft } from 'lucide-react';
+import { Printer, ArrowLeft, Calendar } from 'lucide-react';
 import { isJapaneseHoliday } from '../utils';
 
 interface PrintViewProps {
   users: User[];
   daysInMonth: Date[];
   scheduleData: ScheduleData;
+  eventsData?: EventsData;
   currentDate: Date;
   formatDate: (date: Date) => string;
   getDayOfWeek: (date: Date) => string;
@@ -18,6 +19,7 @@ export default function PrintView({
   users,
   daysInMonth,
   scheduleData,
+  eventsData,
   currentDate,
   formatDate,
   getDayOfWeek,
@@ -208,107 +210,212 @@ export default function PrintView({
             </div>
 
             {/* Shift Schedule Table */}
-            <table className="print-table w-full table-fixed border-collapse border border-slate-800 text-[10px] select-none">
-              <thead>
-                <tr className="bg-slate-100/90">
-                  <th className="border border-slate-800 p-1.5 text-left font-bold text-slate-800 w-[95px] min-w-[95px] sticky left-0 bg-slate-100 z-10 print:static">
-                    氏名
-                  </th>
-                  {daysInMonth.map(date => {
-                    const isHoliday = isJapaneseHoliday(date);
-                    const isSun = date.getDay() === 0 || isHoliday;
-                    const isSat = date.getDay() === 6;
-                    const label = getDayOfWeek(date);
-                    
-                    return (
-                      <th 
-                        key={formatDate(date)} 
-                        className={`border border-slate-800 p-0.5 text-center font-bold min-w-[26px] ${
-                          isSun ? 'bg-red-50 text-red-600' : isSat ? 'bg-blue-50 text-blue-600' : 'text-slate-800'
-                        }`}
-                      >
-                        <div className="leading-tight text-[10px]">{date.getDate()}</div>
-                        <div className="text-[7.5px] font-medium leading-none">{isHoliday ? '祝' : label}</div>
-                      </th>
-                    );
-                  })}
-                  <th className="border border-slate-800 p-1 text-center font-bold bg-slate-50 text-slate-700 w-[32px] min-w-[32px] text-[8.5px]">
-                    出勤
-                  </th>
-                  <th className="border border-slate-800 p-1 text-center font-bold bg-slate-50 text-slate-700 w-[32px] min-w-[32px] text-[8.5px]">
-                    休み
-                  </th>
-                  <th className="border border-slate-800 p-1 text-center font-bold bg-slate-50 text-slate-700 w-[32px] min-w-[32px] text-[8.5px]">
-                    有休
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {employees.map(user => {
-                  let workCount = 0;
-                  let offCount = 0;
-                  let leaveCount = 0;
+            {(() => {
+              // Extract month events grouped by date (日付ごとにグループ化)
+              interface DayEventGroup {
+                date: Date;
+                dateStr: string;
+                events: CalendarEvent[];
+              }
 
-                  return (
-                    <tr key={user.id} className="h-8">
-                      <td className="border border-slate-800 p-1.5 font-bold text-slate-800 text-[11px] truncate w-[95px] min-w-[95px] max-w-[95px] sticky left-0 bg-white z-10 print:static shadow-[1px_0_0_0_#1e293b]">
-                        {user.name}
-                      </td>
-                      
+              const groupedMonthEvents: DayEventGroup[] = [];
+              let totalEventCount = 0;
+
+              if (eventsData) {
+                daysInMonth.forEach(date => {
+                  const dStr = formatDate(date);
+                  const evs = eventsData[dStr] || [];
+                  if (evs.length > 0) {
+                    groupedMonthEvents.push({ date, dateStr: dStr, events: evs });
+                    totalEventCount += evs.length;
+                  }
+                });
+              }
+
+              return (
+                <table className="print-table w-full table-fixed border-collapse border border-slate-800 text-[10px] select-none">
+                  <thead>
+                    <tr className="bg-slate-100/90">
+                      <th className="border border-slate-800 p-1 text-left font-bold text-slate-800 w-[88px] min-w-[88px] sticky left-0 bg-slate-100 z-10 print:static">
+                        氏名
+                      </th>
                       {daysInMonth.map(date => {
                         const dateStr = formatDate(date);
-                        const finalShift = scheduleData[dateStr]?.[user.id]?.final || '';
+                        const isHoliday = isJapaneseHoliday(date);
+                        const isSun = date.getDay() === 0 || isHoliday;
+                        const isSat = date.getDay() === 6;
+                        const label = getDayOfWeek(date);
+                        const hasEvent = eventsData && (eventsData[dateStr]?.length || 0) > 0;
                         
-                        if (finalShift === '休') offCount++;
-                        else if (finalShift === '有' || finalShift === '産' || finalShift === 'AM有' || finalShift === 'PM有') leaveCount++;
-                        else if (finalShift) workCount++;
-
                         return (
-                          <td 
+                          <th 
                             key={dateStr} 
-                            className={`border border-slate-800 text-center font-bold h-8 min-w-[26px] p-0 ${
-                              finalShift === '休' 
-                                ? 'text-red-600 bg-red-50/30' 
-                                : finalShift === '有' || finalShift === '産'
-                                ? 'text-violet-700 bg-violet-50/30'
-                                : finalShift
-                                ? 'text-slate-900'
-                                : 'text-slate-300'
+                            className={`border border-slate-800 p-0.5 text-center font-bold min-w-[24px] ${
+                              isSun ? 'bg-red-50 text-red-600' : isSat ? 'bg-blue-50 text-blue-600' : 'text-slate-800'
                             }`}
                           >
-                            <span className={finalShift.length > 2 ? 'text-[8.5px] tracking-tighter leading-none' : 'text-[11px]'}>
-                              {finalShift || ''}
-                            </span>
-                          </td>
+                            <div className="leading-tight text-[10px]">{date.getDate()}</div>
+                            <div className="text-[7.5px] font-medium leading-none">{isHoliday ? '祝' : label}</div>
+                            {hasEvent && (
+                              <div className="text-[7px] text-amber-600 font-black leading-none mt-0.5" title="行事・予定あり">
+                                ●
+                              </div>
+                            )}
+                          </th>
                         );
                       })}
-
-                      {/* Stats totals in printed columns */}
-                      <td className="border border-slate-800 text-center font-mono font-bold text-slate-700 bg-slate-50 text-[10px]">
-                        {workCount}
-                      </td>
-                      <td className="border border-slate-800 text-center font-mono font-bold text-red-600 bg-slate-50 text-[10px]">
-                        {offCount}
-                      </td>
-                      <td className="border border-slate-800 text-center font-mono font-bold text-violet-700 bg-slate-50 text-[10px]">
-                        {leaveCount}
-                      </td>
+                      {/* 休み列（出勤と有休は削除） */}
+                      <th className="border border-slate-800 p-1 text-center font-bold bg-slate-50 text-slate-700 w-[34px] min-w-[34px] text-[8.5px]">
+                        休み
+                      </th>
+                      {/* 右側にできたスペースにイベント（行事・予定）欄を表示 */}
+                      <th className="border border-slate-800 p-1 text-center font-bold bg-slate-100 text-slate-800 w-[145px] min-w-[145px] text-[8.5px]">
+                        行事・予定
+                      </th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {employees.map((user, userIdx) => {
+                      let offCount = 0;
+
+                      return (
+                        <tr key={user.id} className="h-8">
+                          <td className="border border-slate-800 p-1 font-bold text-slate-800 text-[10.5px] truncate w-[88px] min-w-[88px] max-w-[88px] sticky left-0 bg-white z-10 print:static shadow-[1px_0_0_0_#1e293b]">
+                            {user.name}
+                          </td>
+                          
+                          {daysInMonth.map(date => {
+                            const dateStr = formatDate(date);
+                            const cellData = scheduleData[dateStr]?.[user.id];
+                            const finalShift = cellData?.final || '';
+                            const hasStandby = cellData?.standby;
+                            
+                            if (finalShift === '休') offCount++;
+
+                            return (
+                              <td 
+                                key={dateStr} 
+                                className={`border border-slate-800 text-center font-bold h-8 min-w-[24px] p-0 relative ${
+                                  finalShift === '休' 
+                                    ? 'text-red-600 bg-red-50/30' 
+                                    : finalShift === '有' || finalShift === '産'
+                                    ? 'text-violet-700 bg-violet-50/30'
+                                    : finalShift === '当'
+                                    ? 'text-indigo-950 bg-indigo-50/50'
+                                    : finalShift === '明'
+                                    ? 'text-sky-800 bg-sky-50/50'
+                                    : finalShift
+                                    ? 'text-slate-900'
+                                    : 'text-slate-300'
+                                }`}
+                              >
+                                <div className="w-full h-full flex items-center justify-center relative">
+                                  <span className={finalShift.length > 2 ? 'text-[8.5px] tracking-tighter leading-none' : 'text-[11px]'}>
+                                    {finalShift || ''}
+                                  </span>
+                                  {hasStandby && (
+                                    <span className="absolute top-0.5 right-0.5 text-[6.5px] font-black bg-amber-500 text-white px-0.5 rounded leading-none">
+                                      待
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          })}
+
+                          {/* 休み日数 */}
+                          <td className="border border-slate-800 text-center font-mono font-bold text-red-600 bg-slate-50 text-[10px]">
+                            {offCount}
+                          </td>
+
+                          {/* 右側スペース：当月のイベント・行事予定（日付ごとに1つにまとめて表示） */}
+                          {userIdx === 0 && (
+                            <td 
+                              rowSpan={employees.length} 
+                              className="border border-slate-800 p-2 align-top bg-slate-50/40 text-[9px] select-text"
+                            >
+                              <div className="font-bold text-[9px] text-slate-800 border-b border-slate-300 pb-1 mb-1.5 flex items-center justify-between">
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={11} className="text-amber-600" />
+                                  <span>今月の行事・予定</span>
+                                </span>
+                                <span className="text-[8px] font-mono text-slate-500 font-normal">
+                                  {totalEventCount}件
+                                </span>
+                              </div>
+
+                              {groupedMonthEvents.length === 0 ? (
+                                <div className="text-center text-slate-400 py-6 text-[9px] font-medium">
+                                  当月の予定はありません
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5 overflow-hidden">
+                                  {groupedMonthEvents.map(({ date, events }, groupIdx) => {
+                                    const isSun = date.getDay() === 0;
+                                    const isSat = date.getDay() === 6;
+                                    const isHol = isJapaneseHoliday(date);
+                                    const dayLabel = getDayOfWeek(date);
+                                    const dateDisplay = `${date.getMonth() + 1}/${date.getDate()}`;
+
+                                    return (
+                                      <div key={groupIdx} className="border-b border-slate-200 pb-1.5 last:border-b-0 leading-tight">
+                                        {/* 日付表示は1つだけ */}
+                                        <div className="flex items-center gap-1 mb-0.5">
+                                          <span className={`font-bold font-mono text-[9px] ${
+                                            isSun || isHol ? 'text-rose-600 font-black' : isSat ? 'text-blue-600 font-black' : 'text-slate-800'
+                                          }`}>
+                                            {dateDisplay} ({isHol ? '祝' : dayLabel})
+                                          </span>
+                                        </div>
+
+                                        {/* その日のイベントを一覧表示: イベント名が左揃え、時間が右揃え */}
+                                        <div className="space-y-1 pl-1">
+                                          {events.map((event, evIdx) => (
+                                            <div key={event.id || evIdx} className="leading-tight">
+                                              <div className="flex items-baseline justify-between gap-1.5">
+                                                <span className="font-bold text-slate-900 text-[9px] text-left truncate" title={event.title}>
+                                                  {event.title}
+                                                </span>
+                                                {event.time && (
+                                                  <span className="text-[8px] text-slate-500 font-mono shrink-0 text-right ml-auto">
+                                                    {event.time}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
 
             {/* Print Footer / Legend */}
-            <div className="mt-6 flex justify-between items-start text-slate-500 text-[9px]">
+            <div className="mt-5 flex justify-between items-start text-slate-500 text-[9px]">
               <div>
                 <span className="font-bold block text-slate-700 mb-1">【凡例】</span>
-                <div className="flex flex-wrap gap-x-3.5 gap-y-1">
+                <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
                   {SHIFT_TYPES.filter(t => t.code).map(t => (
                     <span key={t.code}>
                       <strong className="text-slate-800">{t.code}</strong>: {t.label}
                     </span>
                   ))}
+                  <span className="text-amber-800 font-bold bg-amber-100 px-1.5 py-0.2 rounded border border-amber-300">
+                    <strong className="text-amber-900">待</strong>: 待機(オンコール)
+                  </span>
+                  <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                    ●: 行事・予定あり
+                  </span>
                 </div>
               </div>
               
